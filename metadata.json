@@ -1,0 +1,6 @@
+{
+  "name": "World Live Cams & Weather",
+  "description": "A dashboard showing live webcams from around the world and current weather conditions using OpenWeatherMap and Windy.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
