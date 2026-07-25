@@ -57,7 +57,8 @@ async function startServer() {
         const url = `https://api.windy.com/webcams/api/v3/webcams?nearby=${lat},${lon},250&limit=50&offset=${offset}&include=player,location,images`;
         return fetch(url, {
           headers: {
-            "x-windy-api-key": apiKey
+            "x-windy-api-key": apiKey,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
           }
         }).then(r => r.ok ? r.json() : null).catch(() => null);
       });
@@ -69,14 +70,20 @@ async function startServer() {
       for (const data of results) {
         if (data && Array.isArray(data.webcams)) {
           for (const cam of data.webcams) {
-            // Strictly check that live player URL exists
-            if (cam.player && cam.player.live && !seenIds.has(cam.webcamId)) {
+            if (cam.player && (cam.player.live || cam.player.day) && !seenIds.has(cam.webcamId)) {
               seenIds.add(cam.webcamId);
               liveWebcams.push(cam);
             }
           }
         }
       }
+
+      // STRICT RULE: Sort webcams so that active live streams (cam.player.live) ALWAYS come first!
+      liveWebcams.sort((a, b) => {
+        const aIsLive = (a.player && a.player.live) ? 1 : 0;
+        const bIsLive = (b.player && b.player.live) ? 1 : 0;
+        return bIsLive - aIsLive;
+      });
 
       res.json({ webcams: liveWebcams });
     } catch (error: any) {
@@ -92,7 +99,11 @@ async function startServer() {
         return res.status(400).json({ error: "Missing webcam id" });
       }
 
-      const response = await fetch(`https://webcams.windy.com/webcams/stream/${id}`);
+      const response = await fetch(`https://webcams.windy.com/webcams/stream/${id}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
       if (response.ok) {
         const html = await response.text();
         const match = html.match(/src=["']([^"']+)["']/i);
@@ -100,6 +111,9 @@ async function startServer() {
           let streamUrl = match[1].replace(/&#x3D;/g, '=').replace(/&amp;/g, '&');
           if (streamUrl.startsWith('//')) {
             streamUrl = 'https:' + streamUrl;
+          }
+          if (streamUrl.startsWith('http://')) {
+            streamUrl = streamUrl.replace('http://', 'https://');
           }
           return res.json({ streamUrl });
         }

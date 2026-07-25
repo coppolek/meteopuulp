@@ -179,6 +179,38 @@ Segui le istruzioni a schermo. Ora la tua app sarà completamente funzionante in
 
 ---
 
+## 🛠️ Risoluzione Problemi: Streaming Webcam non visibile su VPS
+
+Se la diretta streaming delle webcam non si carica sulla tua VPS, segui questi passaggi di verifica:
+
+1. **Verifica le Chiavi API nel file `.env` sulla VPS**:
+   Se `WINDY_API_KEY` manca nel file `.env` della VPS, l'API delle webcam restituirà un errore 500.
+   ```bash
+   nano /var/www/live-webcams/.env
+   ```
+   Assicurati che sia presente:
+   ```env
+   WINDY_API_KEY=la_tua_chiave_api_windy
+   ```
+   Dopo averla salvata, riavvia il container:
+   ```bash
+   docker compose restart
+   ```
+
+2. **Verifica i Log del Backend**:
+   Controlla cosa risponde il server Express per le chiamate `/api/webcams` e `/api/stream-url`:
+   ```bash
+   docker compose logs -f --tail=50
+   ```
+
+3. **Mancanza di HTTPS (Mixed Content)**:
+   Se accedi al tuo sito via HTTPS (`https://il-tuo-dominio.com`), i browser bloccano gli iframe o flussi video serviti in HTTP non sicuro. Assicurati di aver configurato **Nginx con Certbot SSL** come indicato al Passo 6.
+
+4. **Pulsante "Apri Sorgente"**:
+   Se un adblocker o un'estensione del browser sul client blocca gli iframe incorporati, ogni player offre ora il pulsante **"Apri Sorgente"** in alto a destra per aprire la diretta streaming originale direttamente in una nuova scheda.
+
+---
+
 ## 🔄 Comandi Utili per la Gestione
 
 - **Riavviare l'applicazione**:

@@ -49,8 +49,14 @@ import {
   Mail,
   Lock,
   CheckCircle,
-  ShieldCheck
+  ShieldCheck,
+  ExternalLink,
+  Sliders,
+  Megaphone
 } from "lucide-react";
+import { AdminPanelModal } from "./components/AdminPanelModal";
+import { Banner, AppSettings } from "./types";
+
 
 interface FavoriteCam {
   id: string;
@@ -108,6 +114,43 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
+
+  // Admin Panel & App Config State
+  const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [activeBanners, setActiveBanners] = useState<Banner[]>([]);
+
+  // Sync App Settings from Firestore
+  useEffect(() => {
+    if (!db) return;
+    const settingsRef = doc(db, "app_settings", "config");
+    const unsubscribe = onSnapshot(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setAppSettings(snapshot.data() as AppSettings);
+      }
+    }, (err) => console.warn("App settings subscription warning:", err));
+
+    return () => unsubscribe();
+  }, []);
+
+  // Sync Banners from Firestore
+  useEffect(() => {
+    if (!db) return;
+    const bannersRef = collection(db, "banners");
+    const unsubscribe = onSnapshot(bannersRef, (snapshot) => {
+      const bannerList: Banner[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as Banner;
+        if (data.active) {
+          bannerList.push({ id: docSnap.id, ...data });
+        }
+      });
+      setActiveBanners(bannerList);
+    }, (err) => console.warn("Banners subscription warning:", err));
+
+    return () => unsubscribe();
+  }, []);
+
 
   // Handle Auth state change
   useEffect(() => {
@@ -410,10 +453,10 @@ export default function App() {
     return () => clearInterval(interval);
   }, [weather]);
 
-  // Active webcam selection (strictly live streams)
+  // Active webcam selection (strictly prioritizes active live streams)
   const activeWebcam = selectedWebcamId 
     ? webcams.find(w => w.webcamId === selectedWebcamId) || webcams[0]
-    : webcams[0];
+    : webcams.find(w => w.player?.live) || webcams[0];
 
   // Sync Comments for active webcam from Firestore
   useEffect(() => {
@@ -475,18 +518,23 @@ export default function App() {
   }, [activeWebcam?.webcamId]);
 
   let playerUrl: string | undefined = directStreamUrl || undefined;
-  if (!playerUrl && activeWebcam?.player?.live) {
-    playerUrl = activeWebcam.player.live;
+  if (!playerUrl) {
+    playerUrl = activeWebcam?.player?.live || activeWebcam?.player?.day;
     if (playerUrl) {
       try {
         const url = new URL(playerUrl);
         url.searchParams.set('play', '1');
         url.searchParams.set('autoplay', '1');
+        url.searchParams.set('live', '1');
         playerUrl = url.toString();
       } catch (e) {
         // Fallback
       }
     }
+  }
+
+  if (playerUrl && playerUrl.startsWith('http://')) {
+    playerUrl = playerUrl.replace('http://', 'https://');
   }
 
   // Toggle Favorite & Update Likes Counter in Firestore
@@ -633,6 +681,20 @@ export default function App() {
             </span>
           </button>
 
+          {/* Admin Control Panel Trigger Button */}
+          <button
+            onClick={() => setShowAdminModal(true)}
+            className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 text-white transition-all min-h-[40px] shrink-0 shadow-md shadow-blue-900/40 border border-blue-500/30"
+            title="Pannello Amministratore (Chiavi API, Iscrizioni, Banner)"
+          >
+            <Sliders className="w-3.5 h-3.5 text-blue-300" />
+            <span className="hidden sm:inline">Admin</span>
+            <span className="px-1.5 py-0.5 text-[9px] bg-blue-500/30 text-blue-200 rounded font-black uppercase">
+              Control
+            </span>
+          </button>
+
+
           {/* User Account / Auth Trigger */}
           {currentUser && !currentUser.isAnonymous ? (
             <div className="flex items-center gap-1.5 bg-slate-900 border border-blue-500/30 rounded-xl px-2.5 py-1 min-h-[40px] shrink-0">
@@ -668,6 +730,22 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* System Announcement Bar (Managed via Admin Control Panel) */}
+      {appSettings?.announcementActive && appSettings?.announcementText && (
+        <div className={`px-4 py-2 text-xs font-semibold flex items-center justify-between border-b ${
+          appSettings.announcementType === 'warning'
+            ? 'bg-amber-950/90 border-amber-500/40 text-amber-200'
+            : appSettings.announcementType === 'success'
+            ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200'
+            : 'bg-blue-950/90 border-blue-500/40 text-blue-200'
+        }`}>
+          <div className="flex items-center gap-2 max-w-4xl mx-auto w-full justify-center text-center">
+            <Megaphone className="w-4 h-4 shrink-0 animate-bounce" />
+            <span>{appSettings.announcementText}</span>
+          </div>
+        </div>
+      )}
 
       {/* Horizontal City Selector Pills */}
       <div className="flex-none px-3 sm:px-4 md:px-5 py-2.5 overflow-x-auto scrollbar-hide bg-slate-950/40 border-b border-slate-900">
@@ -715,7 +793,7 @@ export default function App() {
               </span>
             </div>
 
-            {/* Top Right Actions: Favorite & Fullscreen */}
+            {/* Top Right Actions: Favorite, External Source & Fullscreen */}
             <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20 flex items-center gap-2">
               {activeWebcam && (
                 <button
@@ -730,6 +808,19 @@ export default function App() {
                   <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current text-white' : 'text-red-400'}`} />
                   <span className="text-xs font-extrabold">{activeLikesCount} <span className="font-medium opacity-80 hidden sm:inline">Mi Piace</span></span>
                 </button>
+              )}
+
+              {(activeWebcam?.url || playerUrl) && (
+                <a
+                  href={activeWebcam?.url || playerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-xl bg-black/60 hover:bg-black/90 backdrop-blur-md text-slate-300 hover:text-white transition-all border border-white/10 shadow-lg flex items-center gap-1.5"
+                  title="Apri sorgente della diretta in una nuova scheda"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span className="text-xs font-semibold hidden sm:inline">Apri Sorgente</span>
+                </a>
               )}
 
               {playerUrl && (
@@ -750,9 +841,19 @@ export default function App() {
                 <p className="text-xs text-slate-400 font-medium">Caricamento streaming live in corso...</p>
               </div>
             ) : webcamError ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-6 text-center">
-                <AlertCircle className="w-8 h-8 text-red-500 mb-2" />
-                <p className="text-sm text-red-400 max-w-md">{webcamError}</p>
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-6 text-center z-10">
+                <AlertCircle className="w-10 h-10 text-red-500 mb-3 animate-bounce" />
+                <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider mb-1">
+                  Errore di caricamento webcam
+                </h3>
+                <p className="text-xs text-slate-300 max-w-md leading-relaxed bg-red-950/40 p-3 rounded-xl border border-red-500/30">
+                  {webcamError}
+                </p>
+                {webcamError.includes("WINDY_API_KEY") && (
+                  <p className="text-[11px] text-amber-300/90 mt-3 max-w-sm">
+                    💡 <strong>Nota per l'amministratore della VPS:</strong> Aggiungi <code className="bg-slate-900 px-1.5 py-0.5 rounded text-amber-200">WINDY_API_KEY</code> nel file <code className="bg-slate-900 px-1.5 py-0.5 rounded text-amber-200">.env</code> sulla tua VPS e riavvia il container con <code className="bg-slate-900 px-1.5 py-0.5 rounded text-amber-200">docker compose restart</code>.
+                  </p>
+                )}
               </div>
             ) : playerUrl ? (
               <iframe 
@@ -760,10 +861,9 @@ export default function App() {
                 src={playerUrl}
                 title={`${activeCity.name} Live Cam`}
                 className="absolute inset-0 w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                 allowFullScreen
-                referrerPolicy="no-referrer"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-popups"
+                referrerPolicy="no-referrer-when-downgrade"
                 scrolling="no"
               />
             ) : (
@@ -789,6 +889,35 @@ export default function App() {
               </div>
             )}
           </div>
+
+          {/* Promotional Banners (Managed via Admin Control Panel) */}
+          {activeBanners.filter(b => b.position === 'under_player').map(banner => (
+            <div key={banner.id} className="bg-slate-950/90 border border-blue-500/30 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-blue-950/20">
+              <div className="flex items-center gap-3">
+                {banner.imageUrl && (
+                  <img src={banner.imageUrl} alt={banner.title} className="w-16 h-12 rounded-lg object-cover border border-slate-800 shrink-0" />
+                )}
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">
+                    Sponsor Live
+                  </span>
+                  <h4 className="text-xs font-bold text-white mt-0.5">{banner.title}</h4>
+                  {banner.subtitle && <p className="text-[11px] text-slate-400">{banner.subtitle}</p>}
+                </div>
+              </div>
+              {banner.linkUrl && (
+                <a 
+                  href={banner.linkUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-blue-600/30"
+                >
+                  <span>Scopri di più</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          ))}
 
           {/* Webcam Selector Thumbnails Strip */}
           {!loadingWebcams && webcams.length > 0 && (
@@ -1275,6 +1404,13 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Admin Control Panel Modal */}
+      <AdminPanelModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+        currentUserEmail={currentUser?.email || null}
+      />
 
     </div>
   );

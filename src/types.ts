@@ -45,3 +45,37 @@ export interface WeatherData {
   name: string;
   timezone: number;
 }
+
+export interface Banner {
+  id: string;
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  linkUrl?: string;
+  position: 'header' | 'under_player' | 'sidebar';
+  active: boolean;
+  type?: 'image' | 'text';
+  createdAt?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  role: 'admin' | 'user';
+  plan: 'free' | 'pro' | 'vip';
+  status: 'active' | 'suspended' | 'canceled';
+  updatedAt?: string;
+}
+
+export interface AppSettings {
+  announcementText?: string;
+  announcementActive?: boolean;
+  announcementType?: 'info' | 'warning' | 'success';
+  requireLoginForCams?: boolean;
+  windyApiKey?: string;
+  openWeatherApiKey?: string;
+  geminiApiKey?: string;
+}
+

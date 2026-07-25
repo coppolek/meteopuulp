@@ -51,6 +51,49 @@
         "createdAt": { "type": "string" }
       },
       "required": ["webcamId", "text", "userId"]
+    },
+    "app_settings": {
+      "title": "Application Settings",
+      "description": "Global settings and API keys configuration",
+      "type": "object",
+      "properties": {
+        "announcementText": { "type": "string" },
+        "announcementActive": { "type": "boolean" },
+        "requireLoginForCams": { "type": "boolean" },
+        "windyApiKey": { "type": "string" },
+        "openWeatherApiKey": { "type": "string" },
+        "geminiApiKey": { "type": "string" }
+      }
+    },
+    "banners": {
+      "title": "Promotional Banners",
+      "description": "Advertising and info banners",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "linkUrl": { "type": "string" },
+        "position": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "position"]
+    },
+    "user_profiles": {
+      "title": "User Profiles and Subscriptions",
+      "description": "User roles and membership plans",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string" },
+        "plan": { "type": "string" },
+        "status": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "email"]
     }
   }
 }
