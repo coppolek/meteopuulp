@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "favorites": {
+      "title": "Favorite Webcams",
+      "description": "User bookmarked webcams",
+      "type": "object",
+      "properties": {
+        "webcamId": { "type": "number" },
+        "title": { "type": "string" },
+        "cityName": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["webcamId", "userId"]
+    },
+    "webcam_likes": {
+      "title": "Webcam Likes Counter",
+      "description": "Aggregated likes counter per webcam",
+      "type": "object",
+      "properties": {
+        "webcamId": { "type": "number" },
+        "count": { "type": "number" }
+      },
+      "required": ["webcamId", "count"]
+    },
+    "saved_cities": {
+      "title": "Saved Cities",
+      "description": "User custom cities",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "country": { "type": "string" },
+        "lat": { "type": "number" },
+        "lon": { "type": "number" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "lat", "lon", "userId"]
+    },
+    "comments": {
+      "title": "Webcam Comments",
+      "description": "Community comments on webcams",
+      "type": "object",
+      "properties": {
+        "webcamId": { "type": "number" },
+        "userName": { "type": "string" },
+        "text": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["webcamId", "text", "userId"]
+    }
+  }
+}

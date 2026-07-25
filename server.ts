@@ -51,26 +51,63 @@ async function startServer() {
         });
       }
 
-      // Trying the nearby parameter for Windy Webcams API v3
-      // Radius is 250km, limit to 50 webcams to increase chances of finding a live one
-      const url = `https://api.windy.com/webcams/api/v3/webcams?nearby=${lat},${lon},250&limit=50&include=player,location,images`;
-      
-      const response = await fetch(url, {
-        headers: {
-          "x-windy-api-key": apiKey
-        }
+      // Fetch multiple pages (up to 150 webcams within 250km) to find all active live streams
+      const offsets = [0, 50, 100];
+      const fetchPromises = offsets.map(offset => {
+        const url = `https://api.windy.com/webcams/api/v3/webcams?nearby=${lat},${lon},250&limit=50&offset=${offset}&include=player,location,images`;
+        return fetch(url, {
+          headers: {
+            "x-windy-api-key": apiKey
+          }
+        }).then(r => r.ok ? r.json() : null).catch(() => null);
       });
-      
-      if (!response.ok) {
-        const errorData = await response.text();
-        return res.status(response.status).json({ error: `Windy API error: ${errorData}` });
+
+      const results = await Promise.all(fetchPromises);
+      const liveWebcams: any[] = [];
+      const seenIds = new Set<number>();
+
+      for (const data of results) {
+        if (data && Array.isArray(data.webcams)) {
+          for (const cam of data.webcams) {
+            // Strictly check that live player URL exists
+            if (cam.player && cam.player.live && !seenIds.has(cam.webcamId)) {
+              seenIds.add(cam.webcamId);
+              liveWebcams.push(cam);
+            }
+          }
+        }
       }
 
-      const data = await response.json();
-      res.json(data);
+      res.json({ webcams: liveWebcams });
     } catch (error: any) {
       console.error("Windy API error:", error);
       res.status(500).json({ error: "Failed to fetch webcams data" });
+    }
+  });
+
+  app.get("/api/stream-url", async (req, res) => {
+    try {
+      const { id } = req.query;
+      if (!id) {
+        return res.status(400).json({ error: "Missing webcam id" });
+      }
+
+      const response = await fetch(`https://webcams.windy.com/webcams/stream/${id}`);
+      if (response.ok) {
+        const html = await response.text();
+        const match = html.match(/src=["']([^"']+)["']/i);
+        if (match && match[1]) {
+          let streamUrl = match[1].replace(/&#x3D;/g, '=').replace(/&amp;/g, '&');
+          if (streamUrl.startsWith('//')) {
+            streamUrl = 'https:' + streamUrl;
+          }
+          return res.json({ streamUrl });
+        }
+      }
+      res.json({ streamUrl: null });
+    } catch (error: any) {
+      console.error("Stream URL extraction error:", error);
+      res.json({ streamUrl: null });
     }
   });
 
