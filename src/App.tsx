@@ -395,11 +395,19 @@ export default function App() {
 
   useEffect(() => {
     setSelectedWebcamId(null);
+    const headers: Record<string, string> = {};
+    if (appSettings?.windyApiKey) {
+      headers["x-windy-api-key"] = appSettings.windyApiKey;
+    }
+    if (appSettings?.openWeatherApiKey) {
+      headers["x-weather-api-key"] = appSettings.openWeatherApiKey;
+    }
+
     async function fetchWeather() {
       setLoadingWeather(true);
       setError(null);
       try {
-        const res = await fetch(`/api/weather?lat=${activeCity.lat}&lon=${activeCity.lon}`);
+        const res = await fetch(`/api/weather?lat=${activeCity.lat}&lon=${activeCity.lon}`, { headers });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Impossibile recuperare i dati meteo");
         setWeather(data);
@@ -415,7 +423,7 @@ export default function App() {
       setLoadingWebcams(true);
       setWebcamError(null);
       try {
-        const res = await fetch(`/api/webcams?lat=${activeCity.lat}&lon=${activeCity.lon}`);
+        const res = await fetch(`/api/webcams?lat=${activeCity.lat}&lon=${activeCity.lon}`, { headers });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Impossibile caricare le webcam");
         if (data.webcams && data.webcams.length > 0) {
@@ -433,7 +441,7 @@ export default function App() {
 
     fetchWeather();
     fetchWebcams();
-  }, [activeCity]);
+  }, [activeCity, appSettings?.windyApiKey, appSettings?.openWeatherApiKey]);
 
   useEffect(() => {
     if (!weather) return;

@@ -14,10 +14,10 @@ async function startServer() {
         return res.status(400).json({ error: "Missing lat or lon" });
       }
 
-      const apiKey = process.env.OPENWEATHERMAP_API_KEY;
+      const apiKey = (req.headers["x-weather-api-key"] as string) || (req.query.weatherKey as string) || process.env.OPENWEATHERMAP_API_KEY;
       if (!apiKey) {
         return res.status(500).json({ 
-          error: "OPENWEATHERMAP_API_KEY is missing in environment variables. Please configure it in the Secrets panel." 
+          error: "OPENWEATHERMAP_API_KEY is missing. Please add it in .env on your VPS or in the Admin Panel." 
         });
       }
 
@@ -44,10 +44,10 @@ async function startServer() {
         return res.status(400).json({ error: "Missing lat or lon" });
       }
 
-      const apiKey = process.env.WINDY_API_KEY;
+      const apiKey = (req.headers["x-windy-api-key"] as string) || (req.query.windyKey as string) || process.env.WINDY_API_KEY;
       if (!apiKey) {
         return res.status(500).json({ 
-          error: "WINDY_API_KEY is missing in environment variables. Please configure it in the Secrets panel." 
+          error: "WINDY_API_KEY is missing. Please add it in .env on your VPS or in the Admin Panel." 
         });
       }
 
@@ -104,11 +104,18 @@ async function startServer() {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
       });
+
       if (response.ok) {
         const html = await response.text();
-        const match = html.match(/src=["']([^"']+)["']/i);
-        if (match && match[1]) {
-          let streamUrl = match[1].replace(/&#x3D;/g, '=').replace(/&amp;/g, '&');
+        
+        // Match specific iframe or video source tags, EXCLUDING js, css, images
+        const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+        const videoMatch = html.match(/<source[^>]+src=["']([^"']+)["']/i) || html.match(/(https?:\/\/[^\s"']+\.(?:m3u8|mp4)[^\s"']*)/i);
+
+        const candidate = iframeMatch ? iframeMatch[1] : (videoMatch ? videoMatch[1] : null);
+
+        if (candidate && !candidate.includes('.js') && !candidate.includes('.css')) {
+          let streamUrl = candidate.replace(/&#x3D;/g, '=').replace(/&amp;/g, '&');
           if (streamUrl.startsWith('//')) {
             streamUrl = 'https:' + streamUrl;
           }
