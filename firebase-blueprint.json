@@ -62,8 +62,30 @@
         "requireLoginForCams": { "type": "boolean" },
         "windyApiKey": { "type": "string" },
         "openWeatherApiKey": { "type": "string" },
-        "geminiApiKey": { "type": "string" }
+        "geminiApiKey": { "type": "string" },
+        "openWebcamDbApiKey": { "type": "string" },
+        "enableOpenWebcamDb": { "type": "boolean" },
+        "enableWindy": { "type": "boolean" },
+        "enablePublicDirectory": { "type": "boolean" }
       }
+    },
+    "custom_webcams": {
+      "title": "Custom Webcams",
+      "description": "Admin created live webcam streams",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "cityName": { "type": "string" },
+        "country": { "type": "string" },
+        "lat": { "type": "number" },
+        "lon": { "type": "number" },
+        "streamUrl": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "provider": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "cityName", "streamUrl"]
     },
     "banners": {
       "title": "Promotional Banners",

@@ -52,9 +52,10 @@ export interface Banner {
   subtitle?: string;
   imageUrl?: string;
   linkUrl?: string;
+  htmlCode?: string;
   position: 'header' | 'under_player' | 'sidebar';
   active: boolean;
-  type?: 'image' | 'text';
+  type?: 'image' | 'text' | 'html';
   createdAt?: string;
 }
 
@@ -69,6 +70,20 @@ export interface UserProfile {
   updatedAt?: string;
 }
 
+export interface CustomWebcam {
+  id: string;
+  title: string;
+  cityName: string;
+  country?: string;
+  lat?: number;
+  lon?: number;
+  streamUrl: string;
+  thumbnailUrl?: string;
+  provider?: string;
+  active: boolean;
+  createdAt?: string;
+}
+
 export interface AppSettings {
   announcementText?: string;
   announcementActive?: boolean;
@@ -77,5 +92,10 @@ export interface AppSettings {
   windyApiKey?: string;
   openWeatherApiKey?: string;
   geminiApiKey?: string;
+  openWebcamDbApiKey?: string;
+  enableOpenWebcamDb?: boolean;
+  enableWindy?: boolean;
+  enablePublicDirectory?: boolean;
+  adsTxtContent?: string;
 }
 

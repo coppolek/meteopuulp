@@ -24,7 +24,10 @@ import {
   AlertTriangle,
   Info,
   CheckCircle2,
-  Server
+  Server,
+  Video,
+  Globe,
+  Tv
 } from "lucide-react";
 import { 
   doc, 
@@ -38,7 +41,7 @@ import {
   onSnapshot 
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Banner, UserProfile, AppSettings } from "../types";
+import { Banner, UserProfile, AppSettings, CustomWebcam } from "../types";
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -51,15 +54,28 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onClose,
   currentUserEmail
 }) => {
-  const [activeTab, setActiveTab] = useState<'api_keys' | 'users' | 'banners' | 'settings'>('api_keys');
+  const [activeTab, setActiveTab] = useState<'api_keys' | 'custom_cams' | 'users' | 'banners' | 'settings'>('api_keys');
 
   // API Keys state
   const [windyKey, setWindyKey] = useState("");
+  const [openWebcamDbKey, setOpenWebcamDbKey] = useState("");
   const [weatherKey, setWeatherKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({});
   const [apiSaveSuccess, setApiSaveSuccess] = useState(false);
   const [copiedEnv, setCopiedEnv] = useState(false);
+
+  // Custom Webcams state
+  const [customCams, setCustomCams] = useState<CustomWebcam[]>([]);
+  const [loadingCustomCams, setLoadingCustomCams] = useState(false);
+  const [showAddCustomCamModal, setShowAddCustomCamModal] = useState(false);
+  const [newCamTitle, setNewCamTitle] = useState("");
+  const [newCamCity, setNewCamCity] = useState("");
+  const [newCamCountry, setNewCamCountry] = useState("Italia");
+  const [newCamStreamUrl, setNewCamStreamUrl] = useState("");
+  const [newCamThumbnailUrl, setNewCamThumbnailUrl] = useState("");
+  const [newCamLat, setNewCamLat] = useState("");
+  const [newCamLon, setNewCamLon] = useState("");
 
   // Users & Subscriptions state
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -78,6 +94,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [newBannerSubtitle, setNewBannerSubtitle] = useState("");
   const [newBannerImageUrl, setNewBannerImageUrl] = useState("");
   const [newBannerLinkUrl, setNewBannerLinkUrl] = useState("");
+  const [newBannerHtmlCode, setNewBannerHtmlCode] = useState("");
+  const [newBannerType, setNewBannerType] = useState<'image' | 'text' | 'html'>('image');
   const [newBannerPosition, setNewBannerPosition] = useState<'header' | 'under_player' | 'sidebar'>('under_player');
   const [showAddBanner, setShowAddBanner] = useState(false);
 
@@ -86,6 +104,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [announcementActive, setAnnouncementActive] = useState(false);
   const [announcementType, setAnnouncementType] = useState<'info' | 'warning' | 'success'>('info');
   const [requireLoginForCams, setRequireLoginForCams] = useState(false);
+  const [adsTxtContent, setAdsTxtContent] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
@@ -98,13 +117,36 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       if (snapshot.exists()) {
         const data = snapshot.data() as AppSettings;
         setWindyKey(data.windyApiKey || "");
+        setOpenWebcamDbKey(data.openWebcamDbApiKey || "");
         setWeatherKey(data.openWeatherApiKey || "");
         setGeminiKey(data.geminiApiKey || "");
         setAnnouncementText(data.announcementText || "");
         setAnnouncementActive(!!data.announcementActive);
         setAnnouncementType(data.announcementType || "info");
         setRequireLoginForCams(!!data.requireLoginForCams);
+        setAdsTxtContent(data.adsTxtContent || "");
       }
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  // Load Custom Webcams from Firestore
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoadingCustomCams(true);
+
+    const camsRef = collection(db, "custom_webcams");
+    const unsubscribe = onSnapshot(camsRef, (snapshot) => {
+      const camList: CustomWebcam[] = [];
+      snapshot.forEach((docSnap) => {
+        camList.push({ id: docSnap.id, ...docSnap.data() } as CustomWebcam);
+      });
+      setCustomCams(camList);
+      setLoadingCustomCams(false);
+    }, (err) => {
+      console.warn("Error fetching custom cams:", err);
+      setLoadingCustomCams(false);
     });
 
     return () => unsubscribe();
@@ -175,6 +217,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     try {
       await setDoc(doc(db, "app_settings", "config"), {
         windyApiKey: windyKey.trim(),
+        openWebcamDbApiKey: openWebcamDbKey.trim(),
         openWeatherApiKey: weatherKey.trim(),
         geminiApiKey: geminiKey.trim(),
         announcementText,
@@ -193,6 +236,56 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
   };
 
+  // Custom Webcam Handlers
+  const handleAddCustomCam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCamTitle.trim() || !newCamStreamUrl.trim()) return;
+
+    try {
+      await addDoc(collection(db, "custom_webcams"), {
+        title: newCamTitle.trim(),
+        cityName: newCamCity.trim() || "Generico",
+        country: newCamCountry.trim() || "Italia",
+        lat: newCamLat ? parseFloat(newCamLat) : 0,
+        lon: newCamLon ? parseFloat(newCamLon) : 0,
+        streamUrl: newCamStreamUrl.trim(),
+        thumbnailUrl: newCamThumbnailUrl.trim() || "https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=600&q=80",
+        provider: "Custom Admin",
+        active: true,
+        createdAt: new Date().toISOString()
+      });
+
+      setNewCamTitle("");
+      setNewCamCity("");
+      setNewCamStreamUrl("");
+      setNewCamThumbnailUrl("");
+      setNewCamLat("");
+      setNewCamLon("");
+      setShowAddCustomCamModal(false);
+    } catch (err) {
+      console.error("Error adding custom webcam:", err);
+    }
+  };
+
+  const handleToggleCustomCamActive = async (camId: string, currentActive: boolean) => {
+    try {
+      await updateDoc(doc(db, "custom_webcams", camId), {
+        active: !currentActive
+      });
+    } catch (err) {
+      console.error("Error toggling custom webcam:", err);
+    }
+  };
+
+  const handleDeleteCustomCam = async (camId: string) => {
+    if (!window.confirm("Eliminare questa webcam custom?")) return;
+    try {
+      await deleteDoc(doc(db, "custom_webcams", camId));
+    } catch (err) {
+      console.error("Error deleting custom webcam:", err);
+    }
+  };
+
   // Save General Settings
   const handleSaveSettings = async () => {
     setSavingSettings(true);
@@ -202,6 +295,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         announcementActive,
         announcementType,
         requireLoginForCams,
+        adsTxtContent: adsTxtContent.trim(),
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
@@ -284,9 +378,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         subtitle: newBannerSubtitle.trim(),
         imageUrl: newBannerImageUrl.trim(),
         linkUrl: newBannerLinkUrl.trim(),
+        htmlCode: newBannerHtmlCode.trim(),
         position: newBannerPosition,
         active: true,
-        type: newBannerImageUrl ? 'image' : 'text',
+        type: newBannerType,
         createdAt: new Date().toISOString()
       });
 
@@ -294,6 +389,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       setNewBannerSubtitle("");
       setNewBannerImageUrl("");
       setNewBannerLinkUrl("");
+      setNewBannerHtmlCode("");
+      setNewBannerType('image');
       setShowAddBanner(false);
     } catch (err) {
       console.error("Error adding banner:", err);
@@ -321,7 +418,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   // Copy VPS .env snippet
   const copyEnvSnippet = () => {
-    const text = `PORT=3300\nNODE_ENV=production\nWINDY_API_KEY=${windyKey || 'tua_key'}\nOPENWEATHERMAP_API_KEY=${weatherKey || 'tua_key'}\nGEMINI_API_KEY=${geminiKey || 'tua_key'}`;
+    const text = `PORT=3300\nNODE_ENV=production\nWINDY_API_KEY=${windyKey || 'tua_key'}\nOPENWEBCAMDB_API_KEY=${openWebcamDbKey || 'tua_key'}\nOPENWEATHERMAP_API_KEY=${weatherKey || 'tua_key'}\nGEMINI_API_KEY=${geminiKey || 'tua_key'}`;
     navigator.clipboard.writeText(text);
     setCopiedEnv(true);
     setTimeout(() => setCopiedEnv(false), 2500);
@@ -378,6 +475,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             >
               <Key className="w-4 h-4 shrink-0" />
               <span>Chiavi API & VPS</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('custom_cams')}
+              className={`flex-1 md:flex-none flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left whitespace-nowrap ${
+                activeTab === 'custom_cams'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <Video className="w-4 h-4 shrink-0 text-emerald-400" />
+              <div className="flex items-center justify-between w-full">
+                <span>Webcam Custom</span>
+                <span className="ml-1 px-1.5 py-0.2 bg-emerald-950/80 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/30">
+                  {customCams.length}
+                </span>
+              </div>
             </button>
 
             <button
@@ -481,6 +595,47 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     </p>
                   </div>
 
+                  {/* OpenWebcamDB Free API Key & Dashboard */}
+                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                        <span>OpenWebcamDB API Key / Directory</span>
+                        <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] rounded-md font-semibold">
+                          Open Web Cams
+                        </span>
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <a
+                          href="https://openwebcamdb.com/dashboard"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 hover:underline"
+                        >
+                          <span>Dashboard OpenWebcamDB</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setShowKeys(prev => ({ ...prev, owdb: !prev.owdb }))}
+                          className="text-slate-400 hover:text-white text-xs flex items-center gap-1"
+                        >
+                          {showKeys.owdb ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          <span>{showKeys.owdb ? 'Nascondi' : 'Mostra'}</span>
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type={showKeys.owdb ? "text" : "password"}
+                      value={openWebcamDbKey}
+                      onChange={(e) => setOpenWebcamDbKey(e.target.value)}
+                      placeholder="es. owdb_live_key_..."
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                    />
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                      <span>Integrazione gratuita con OpenWebcamDB (openwebcamdb.com) per accedere al database globale di webcam pubbliche.</span>
+                    </p>
+                  </div>
+
                   {/* OpenWeatherMap Key */}
                   <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                     <div className="flex items-center justify-between">
@@ -572,6 +727,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 {`PORT=3300
 NODE_ENV=production
 WINDY_API_KEY=${windyKey || 'tua_windy_key'}
+OPENWEBCAMDB_API_KEY=${openWebcamDbKey || 'tua_openwebcamdb_key'}
 OPENWEATHERMAP_API_KEY=${weatherKey || 'tua_openweather_key'}
 GEMINI_API_KEY=${geminiKey || 'tua_gemini_key'}`}
                   </pre>
@@ -579,6 +735,193 @@ GEMINI_API_KEY=${geminiKey || 'tua_gemini_key'}`}
                     Incolla questo blocco nel file <code className="text-slate-300 font-mono">.env</code> nella cartella <code className="text-slate-300 font-mono">/var/www/live-webcams</code> della tua VPS e riavvia il container con <code className="text-slate-300 font-mono">docker compose restart</code>.
                   </p>
                 </div>
+              </div>
+            )}
+
+            {/* TAB: WEBCAM CUSTOM & OPEN WEBCAMS */}
+            {activeTab === 'custom_cams' && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-2">
+                      <Video className="w-4 h-4 text-emerald-400" />
+                      Gestione Webcam Personalizzate e Stream Diretti
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Aggiungi i tuoi stream live (YouTube Live, HLS .m3u8 o Iframe) per qualsiasi città del mondo.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setShowAddCustomCamModal(true)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-emerald-600/30 flex items-center gap-2 shrink-0 self-start sm:self-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Aggiungi Webcam Custom</span>
+                  </button>
+                </div>
+
+                {/* List of Custom Cams */}
+                {customCams.length === 0 ? (
+                  <div className="p-8 bg-slate-950 border border-slate-800 rounded-2xl text-center space-y-3">
+                    <Tv className="w-10 h-10 text-slate-600 mx-auto" />
+                    <h4 className="text-xs font-bold text-slate-300">Nessuna Webcam Custom Aggiunta</h4>
+                    <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                      Puoi inserire qualsiasi link streaming diretto (es. diretta YouTube di una piazza, stream m3u8 o iframe) per arricchire l'offerta di webcam per le tue città.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {customCams.map((cam) => (
+                      <div key={cam.id} className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3 relative group">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            {cam.thumbnailUrl && (
+                              <img src={cam.thumbnailUrl} alt={cam.title} className="w-16 h-12 object-cover rounded-lg border border-slate-800 shrink-0" />
+                            )}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 text-[9px] font-extrabold uppercase rounded">
+                                  {cam.cityName}
+                                </span>
+                                {cam.country && <span className="text-[10px] text-slate-400">{cam.country}</span>}
+                              </div>
+                              <h4 className="text-xs font-bold text-white mt-1">{cam.title}</h4>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleToggleCustomCamActive(cam.id, cam.active)}
+                              className={`px-2 py-1 rounded text-[10px] font-bold ${
+                                cam.active ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-500'
+                              }`}
+                            >
+                              {cam.active ? 'Attiva' : 'Pausa'}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCustomCam(cam.id)}
+                              className="p-1.5 rounded bg-red-950/60 text-red-400 hover:text-white border border-red-500/30"
+                              title="Elimina"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-2 bg-slate-900 rounded-lg text-[10px] font-mono text-slate-400 truncate">
+                          {cam.streamUrl}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Modal Add Custom Cam */}
+                {showAddCustomCamModal && (
+                  <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
+                    <form onSubmit={handleAddCustomCam} className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 text-slate-100 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <Video className="w-4 h-4 text-emerald-400" />
+                          Aggiungi Nuova Webcam Streaming
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddCustomCamModal(false)}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                          Titolo Webcam *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newCamTitle}
+                          onChange={(e) => setNewCamTitle(e.target.value)}
+                          placeholder="es. Panoramica Colosseo e Fori Imperiali"
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                            Città *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={newCamCity}
+                            onChange={(e) => setNewCamCity(e.target.value)}
+                            placeholder="es. Roma"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                            Nazione
+                          </label>
+                          <input
+                            type="text"
+                            value={newCamCountry}
+                            onChange={(e) => setNewCamCountry(e.target.value)}
+                            placeholder="es. Italia"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                          URL Stream Live (YouTube Live, Embed Iframe, .m3u8) *
+                        </label>
+                        <input
+                          type="url"
+                          required
+                          value={newCamStreamUrl}
+                          onChange={(e) => setNewCamStreamUrl(e.target.value)}
+                          placeholder="https://www.youtube.com/embed/live_stream_id o URL .m3u8"
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                          URL Anteprima / Miniatura (Opzionale)
+                        </label>
+                        <input
+                          type="url"
+                          value={newCamThumbnailUrl}
+                          onChange={(e) => setNewCamThumbnailUrl(e.target.value)}
+                          placeholder="https://images.unsplash.com/..."
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddCustomCamModal(false)}
+                          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs"
+                        >
+                          Annulla
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/30"
+                        >
+                          Salva Webcam
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
               </div>
             )}
 
@@ -930,9 +1273,40 @@ GEMINI_API_KEY=${geminiKey || 'tua_gemini_key'}`}
                         </button>
                       </div>
 
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                            Tipo Banner
+                          </label>
+                          <select
+                            value={newBannerType}
+                            onChange={(e) => setNewBannerType(e.target.value as any)}
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="image">Immagine + Testo</option>
+                            <option value="text">Solo Testo</option>
+                            <option value="html">Codice HTML (es. AdSense)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                            Posizione del Banner
+                          </label>
+                          <select
+                            value={newBannerPosition}
+                            onChange={(e) => setNewBannerPosition(e.target.value as any)}
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="under_player">Sotto il Player della Webcam</option>
+                            <option value="header">In alto (Header Bar)</option>
+                            <option value="sidebar">Barra Laterale (Sidebar)</option>
+                          </select>
+                        </div>
+                      </div>
+
                       <div>
                         <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                          Titolo Banner / Sponsor *
+                          Titolo (Nome Interno) *
                         </label>
                         <input
                           type="text"
@@ -944,59 +1318,62 @@ GEMINI_API_KEY=${geminiKey || 'tua_gemini_key'}`}
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                          Sottotitolo / Descrizione o Call to Action
-                        </label>
-                        <input
-                          type="text"
-                          value={newBannerSubtitle}
-                          onChange={(e) => setNewBannerSubtitle(e.target.value)}
-                          placeholder="es. Sconto del 20% prenotando direttamente dal sito"
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
+                      {newBannerType !== 'html' ? (
+                        <>
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                              Sottotitolo / Descrizione o Call to Action
+                            </label>
+                            <input
+                              type="text"
+                              value={newBannerSubtitle}
+                              onChange={(e) => setNewBannerSubtitle(e.target.value)}
+                              placeholder="es. Sconto del 20% prenotando direttamente dal sito"
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
 
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                          URL Immagine Banner (Opzionale)
-                        </label>
-                        <input
-                          type="url"
-                          value={newBannerImageUrl}
-                          onChange={(e) => setNewBannerImageUrl(e.target.value)}
-                          placeholder="https://immagini.esempio.com/banner.jpg"
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
+                          {newBannerType === 'image' && (
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                                URL Immagine Banner
+                              </label>
+                              <input
+                                type="url"
+                                value={newBannerImageUrl}
+                                onChange={(e) => setNewBannerImageUrl(e.target.value)}
+                                placeholder="https://immagini.esempio.com/banner.jpg"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                              />
+                            </div>
+                          )}
 
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                          Link Destinazione (Opzionale)
-                        </label>
-                        <input
-                          type="url"
-                          value={newBannerLinkUrl}
-                          onChange={(e) => setNewBannerLinkUrl(e.target.value)}
-                          placeholder="https://www.sito-partner.com"
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                          Posizione del Banner
-                        </label>
-                        <select
-                          value={newBannerPosition}
-                          onChange={(e) => setNewBannerPosition(e.target.value as any)}
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
-                        >
-                          <option value="under_player">Sotto il Player della Webcam (Scelta Consigliata)</option>
-                          <option value="header">In alto (Header Bar)</option>
-                          <option value="sidebar">Barra Laterale (Sidebar)</option>
-                        </select>
-                      </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                              Link Destinazione
+                            </label>
+                            <input
+                              type="url"
+                              value={newBannerLinkUrl}
+                              onChange={(e) => setNewBannerLinkUrl(e.target.value)}
+                              placeholder="https://www.sito-partner.com"
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                            Codice HTML / JavaScript
+                          </label>
+                          <textarea
+                            value={newBannerHtmlCode}
+                            onChange={(e) => setNewBannerHtmlCode(e.target.value)}
+                            placeholder="<!-- Codice AdSense o altro HTML -->"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-100 focus:outline-none focus:border-blue-500 min-h-[120px]"
+                          />
+                        </div>
+                      )}
 
                       <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                         <button
@@ -1124,6 +1501,19 @@ GEMINI_API_KEY=${geminiKey || 'tua_gemini_key'}`}
                       checked={requireLoginForCams}
                       onChange={(e) => setRequireLoginForCams(e.target.checked)}
                       className="w-4 h-4 rounded border-slate-800 text-blue-600 focus:ring-blue-500 bg-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-200 block mb-1">Codice ads.txt (Google AdSense)</label>
+                    <p className="text-[11px] text-slate-500 mb-2">Incolla qui il contenuto del file ads.txt per la monetizzazione. Sarà accessibile pubblicamente da /ads.txt</p>
+                    <textarea
+                      value={adsTxtContent}
+                      onChange={(e) => setAdsTxtContent(e.target.value)}
+                      placeholder="google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[120px]"
                     />
                   </div>
                 </div>

@@ -6,6 +6,40 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Read Firebase config to get project and db info for ads.txt
+  let firebaseProjectId = "";
+  let firestoreDbId = "";
+  try {
+    const fs = await import("fs/promises");
+    const configData = await fs.readFile(path.join(process.cwd(), "firebase-applet-config.json"), "utf8");
+    const config = JSON.parse(configData);
+    firebaseProjectId = config.projectId;
+    firestoreDbId = config.firestoreDatabaseId || "(default)";
+  } catch (e) {
+    console.warn("Could not read firebase-applet-config.json for ads.txt route");
+  }
+
+  // ads.txt route
+  app.get("/ads.txt", async (req, res) => {
+    try {
+      if (!firebaseProjectId) {
+        return res.type("text/plain").send("");
+      }
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/${firestoreDbId}/documents/app_settings/config`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        const adsTxtContent = data.fields?.adsTxtContent?.stringValue || "";
+        res.type("text/plain").send(adsTxtContent);
+      } else {
+        res.type("text/plain").send("");
+      }
+    } catch (e) {
+      console.error("Error fetching ads.txt", e);
+      res.type("text/plain").send("");
+    }
+  });
+
   // API Routes
   app.get("/api/weather", async (req, res) => {
     try {
@@ -44,38 +78,149 @@ async function startServer() {
         return res.status(400).json({ error: "Missing lat or lon" });
       }
 
-      const apiKey = (req.headers["x-windy-api-key"] as string) || (req.query.windyKey as string) || process.env.WINDY_API_KEY;
-      if (!apiKey) {
-        return res.status(500).json({ 
-          error: "WINDY_API_KEY is missing. Please add it in .env on your VPS or in the Admin Panel." 
-        });
-      }
+      const latNum = parseFloat(lat as string);
+      const lonNum = parseFloat(lon as string);
 
-      // Fetch multiple pages (up to 150 webcams within 250km) to find all active live streams
-      const offsets = [0, 50, 100];
-      const fetchPromises = offsets.map(offset => {
-        const url = `https://api.windy.com/webcams/api/v3/webcams?nearby=${lat},${lon},250&limit=50&offset=${offset}&include=player,location,images`;
-        return fetch(url, {
-          headers: {
-            "x-windy-api-key": apiKey,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          }
-        }).then(r => r.ok ? r.json() : null).catch(() => null);
-      });
+      const windyKey = (req.headers["x-windy-api-key"] as string) || (req.query.windyKey as string) || process.env.WINDY_API_KEY;
+      const openWebcamDbKey = (req.headers["x-openwebcamdb-api-key"] as string) || (req.query.openWebcamDbKey as string) || process.env.OPENWEBCAMDB_API_KEY || "58|LmdLOrSyprVtGgmQR1KWyMMAmaniX9HcJqRYUy6nd617981b";
 
-      const results = await Promise.all(fetchPromises);
       const liveWebcams: any[] = [];
-      const seenIds = new Set<number>();
+      const seenIds = new Set<string | number>();
 
-      for (const data of results) {
-        if (data && Array.isArray(data.webcams)) {
-          for (const cam of data.webcams) {
-            if (cam.player && (cam.player.live || cam.player.day) && !seenIds.has(cam.webcamId)) {
-              seenIds.add(cam.webcamId);
-              liveWebcams.push(cam);
+      // 1. Query Windy API if key available
+      if (windyKey) {
+        try {
+          const offsets = [0, 50, 100];
+          const fetchPromises = offsets.map(offset => {
+            const url = `https://api.windy.com/webcams/api/v3/webcams?nearby=${lat},${lon},250&limit=50&offset=${offset}&include=player,location,images`;
+            return fetch(url, {
+              headers: {
+                "x-windy-api-key": windyKey,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              }
+            }).then(r => r.ok ? r.json() : null).catch(() => null);
+          });
+
+          const results = await Promise.all(fetchPromises);
+          for (const data of results) {
+            if (data && Array.isArray(data.webcams)) {
+              for (const cam of data.webcams) {
+                if (cam.player && (cam.player.live || cam.player.day) && !seenIds.has(cam.webcamId)) {
+                  seenIds.add(cam.webcamId);
+                  liveWebcams.push({
+                    ...cam,
+                    provider: "Windy"
+                  });
+                }
+              }
             }
           }
+        } catch (e) {
+          console.warn("Windy fetch warning:", e);
         }
+      }
+
+      // 2. Query OpenWebcamDB API (Public / Keyed)
+      try {
+        const owdbHeaders: Record<string, string> = {
+          "User-Agent": "WorldLiveCamsApp/1.0",
+          "Accept": "application/json"
+        };
+        if (openWebcamDbKey) {
+          owdbHeaders["Authorization"] = `Bearer ${openWebcamDbKey}`;
+        }
+
+        const owdbUrl = `https://openwebcamdb.com/api/v1/webcams?per_page=2000`;
+        const owdbRes = await fetch(owdbUrl, { headers: owdbHeaders, timeout: 8000 } as any);
+        if (owdbRes.ok) {
+          const owdbData = await owdbRes.json();
+          const camsList = owdbData.data || [];
+          if (Array.isArray(camsList)) {
+            const nearbyCams = [];
+            for (const cam of camsList) {
+              const camLat = parseFloat(cam.latitude);
+              const camLon = parseFloat(cam.longitude);
+              if (isNaN(camLat) || isNaN(camLon)) continue;
+
+              // Compute Haversine distance
+              const R = 6371; // km
+              const dLat = (camLat - latNum) * Math.PI / 180;
+              const dLon = (camLon - lonNum) * Math.PI / 180;
+              const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                        Math.cos(latNum * Math.PI / 180) * Math.cos(camLat * Math.PI / 180) *
+                        Math.sin(dLon/2) * Math.sin(dLon/2);
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+              const dist = R * c;
+
+              if (dist <= 150) {
+                nearbyCams.push({ cam, dist });
+              }
+            }
+
+            // Sort by distance and limit to top 20 to avoid excessive individual API requests
+            nearbyCams.sort((a, b) => a.dist - b.dist);
+            const topCams = nearbyCams.slice(0, 20);
+
+            await Promise.all(topCams.map(async ({ cam }) => {
+              const camId = `owdb_${cam.slug}`;
+              if (!seenIds.has(camId)) {
+                seenIds.add(camId);
+                
+                // OpenWebcamDB's stream URL requires fetching the individual slug to get the actual stream
+                let liveStreamUrl = "";
+                try {
+                  const detailRes = await fetch(`https://openwebcamdb.com/api/v1/webcams/${cam.slug}`, { headers: owdbHeaders, timeout: 3000 } as any);
+                  if (detailRes.ok) {
+                    const detailData = await detailRes.json();
+                    liveStreamUrl = detailData.data?.stream_url || "";
+                  }
+                } catch (e) {
+                  console.warn(`Failed to fetch detail for owdb slug ${cam.slug}`);
+                }
+
+                if (liveStreamUrl) {
+                  // Convert youtube watch URLs to embed URLs to allow iframing
+                  if (liveStreamUrl.includes("youtube.com/watch?v=")) {
+                    liveStreamUrl = liveStreamUrl.replace("watch?v=", "embed/");
+                  }
+                } else {
+                  // Fallback to the web link but it has SAMEORIGIN, so it might fail to iframe
+                  liveStreamUrl = `https://openwebcamdb.com/webcams/${cam.slug}`;
+                }
+
+                liveWebcams.push({
+                  webcamId: camId,
+                  title: cam.title || "Live Cam",
+                  player: {
+                    live: liveStreamUrl, 
+                    day: ""
+                  },
+                  location: {
+                    city: cam.city || "",
+                    country: cam.country?.name || ""
+                  },
+                  images: {
+                    current: {
+                      thumbnail: cam.thumbnail_url || "",
+                      preview: cam.thumbnail_url || ""
+                    }
+                  },
+                  provider: "OpenWebcamDB",
+                  slug: cam.slug
+                });
+              }
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn("OpenWebcamDB fetch error:", e);
+      }
+
+      // Check if no webcams found and neither key was provided
+      if (liveWebcams.length === 0 && !windyKey && !openWebcamDbKey) {
+        return res.status(500).json({
+          error: "Nessuna chiave API configurata per Windy o OpenWebcamDB. Inserisci una chiave nell'Admin Panel o nel file .env della VPS."
+        });
       }
 
       // STRICT RULE: Sort webcams so that active live streams (cam.player.live) ALWAYS come first!
@@ -87,7 +232,7 @@ async function startServer() {
 
       res.json({ webcams: liveWebcams });
     } catch (error: any) {
-      console.error("Windy API error:", error);
+      console.error("Webcam API error:", error);
       res.status(500).json({ error: "Failed to fetch webcams data" });
     }
   });

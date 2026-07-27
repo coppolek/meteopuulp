@@ -393,11 +393,36 @@ export default function App() {
     }
   };
 
+  // Firestore Custom Webcams Subscription
+  const [firestoreCustomCams, setFirestoreCustomCams] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!db) return;
+    const camsRef = collection(db, "custom_webcams");
+    const unsubscribe = onSnapshot(camsRef, (snapshot) => {
+      const list: any[] = [];
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.active !== false) {
+          list.push({ id: docSnap.id, ...data });
+        }
+      });
+      setFirestoreCustomCams(list);
+    }, (err) => {
+      console.warn("Firestore custom_webcams error:", err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     setSelectedWebcamId(null);
     const headers: Record<string, string> = {};
     if (appSettings?.windyApiKey) {
       headers["x-windy-api-key"] = appSettings.windyApiKey;
+    }
+    if (appSettings?.openWebcamDbApiKey) {
+      headers["x-openwebcamdb-api-key"] = appSettings.openWebcamDbApiKey;
     }
     if (appSettings?.openWeatherApiKey) {
       headers["x-weather-api-key"] = appSettings.openWeatherApiKey;
@@ -426,11 +451,25 @@ export default function App() {
         const res = await fetch(`/api/webcams?lat=${activeCity.lat}&lon=${activeCity.lon}`, { headers });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Impossibile caricare le webcam");
-        if (data.webcams && data.webcams.length > 0) {
-          setWebcams(data.webcams);
-        } else {
-          setWebcams([]);
-        }
+
+        let fetchedCams = data.webcams || [];
+
+        // Match custom webcams for active city or general
+        const matchingCustomCams = firestoreCustomCams.filter((c: any) => 
+          c.cityName?.toLowerCase() === activeCity.name?.toLowerCase() ||
+          c.cityName?.toLowerCase() === 'generico' ||
+          !c.cityName
+        ).map((c: any) => ({
+          id: `custom_${c.id}`,
+          title: c.title,
+          city: c.cityName || activeCity.name,
+          status: "active",
+          playerUrl: c.streamUrl,
+          thumbnailUrl: c.thumbnailUrl || "https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=600&q=80",
+          provider: c.provider || "Custom Stream"
+        }));
+
+        setWebcams([...matchingCustomCams, ...fetchedCams]);
       } catch (err: any) {
         setWebcamError(err.message);
         setWebcams([]);
@@ -441,7 +480,7 @@ export default function App() {
 
     fetchWeather();
     fetchWebcams();
-  }, [activeCity, appSettings?.windyApiKey, appSettings?.openWeatherApiKey]);
+  }, [activeCity, appSettings?.windyApiKey, appSettings?.openWebcamDbApiKey, appSettings?.openWeatherApiKey, firestoreCustomCams]);
 
   useEffect(() => {
     if (!weather) return;
@@ -690,17 +729,19 @@ export default function App() {
           </button>
 
           {/* Admin Control Panel Trigger Button */}
-          <button
-            onClick={() => setShowAdminModal(true)}
-            className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 text-white transition-all min-h-[40px] shrink-0 shadow-md shadow-blue-900/40 border border-blue-500/30"
-            title="Pannello Amministratore (Chiavi API, Iscrizioni, Banner)"
-          >
-            <Sliders className="w-3.5 h-3.5 text-blue-300" />
-            <span className="hidden sm:inline">Admin</span>
-            <span className="px-1.5 py-0.5 text-[9px] bg-blue-500/30 text-blue-200 rounded font-black uppercase">
-              Control
-            </span>
-          </button>
+          {currentUser && (
+            <button
+              onClick={() => setShowAdminModal(true)}
+              className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 text-white transition-all min-h-[40px] shrink-0 shadow-md shadow-blue-900/40 border border-blue-500/30"
+              title="Pannello Amministratore (Chiavi API, Iscrizioni, Banner)"
+            >
+              <Sliders className="w-3.5 h-3.5 text-blue-300" />
+              <span className="hidden sm:inline">Admin</span>
+              <span className="px-1.5 py-0.5 text-[9px] bg-blue-500/30 text-blue-200 rounded font-black uppercase">
+                Control
+              </span>
+            </button>
+          )}
 
 
           {/* User Account / Auth Trigger */}
@@ -900,31 +941,35 @@ export default function App() {
 
           {/* Promotional Banners (Managed via Admin Control Panel) */}
           {activeBanners.filter(b => b.position === 'under_player').map(banner => (
-            <div key={banner.id} className="bg-slate-950/90 border border-blue-500/30 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-blue-950/20">
-              <div className="flex items-center gap-3">
-                {banner.imageUrl && (
-                  <img src={banner.imageUrl} alt={banner.title} className="w-16 h-12 rounded-lg object-cover border border-slate-800 shrink-0" />
-                )}
-                <div>
-                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">
-                    Sponsor Live
-                  </span>
-                  <h4 className="text-xs font-bold text-white mt-0.5">{banner.title}</h4>
-                  {banner.subtitle && <p className="text-[11px] text-slate-400">{banner.subtitle}</p>}
+            banner.type === 'html' ? (
+              <div key={banner.id} className="w-full my-2 overflow-hidden flex justify-center items-center" dangerouslySetInnerHTML={{ __html: banner.htmlCode || "" }} />
+            ) : (
+              <div key={banner.id} className="bg-slate-950/90 border border-blue-500/30 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-blue-950/20">
+                <div className="flex items-center gap-3">
+                  {banner.imageUrl && (
+                    <img src={banner.imageUrl} alt={banner.title} className="w-16 h-12 rounded-lg object-cover border border-slate-800 shrink-0" />
+                  )}
+                  <div>
+                    <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">
+                      Sponsor Live
+                    </span>
+                    <h4 className="text-xs font-bold text-white mt-0.5">{banner.title}</h4>
+                    {banner.subtitle && <p className="text-[11px] text-slate-400">{banner.subtitle}</p>}
+                  </div>
                 </div>
+                {banner.linkUrl && (
+                  <a 
+                    href={banner.linkUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-blue-600/30"
+                  >
+                    <span>Scopri di più</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
-              {banner.linkUrl && (
-                <a 
-                  href={banner.linkUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-blue-600/30"
-                >
-                  <span>Scopri di più</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-            </div>
+            )
           ))}
 
           {/* Webcam Selector Thumbnails Strip */}
