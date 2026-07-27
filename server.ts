@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import fs from "fs/promises";
+import { cities } from "./src/data/cities";
 
 async function startServer() {
   const app = express();
@@ -10,7 +12,6 @@ async function startServer() {
   let firebaseProjectId = "";
   let firestoreDbId = "";
   try {
-    const fs = await import("fs/promises");
     const configData = await fs.readFile(path.join(process.cwd(), "firebase-applet-config.json"), "utf8");
     const config = JSON.parse(configData);
     firebaseProjectId = config.projectId;
@@ -166,27 +167,9 @@ async function startServer() {
               if (!seenIds.has(camId)) {
                 seenIds.add(camId);
                 
-                // OpenWebcamDB's stream URL requires fetching the individual slug to get the actual stream
-                let liveStreamUrl = "";
-                try {
-                  const detailRes = await fetch(`https://openwebcamdb.com/api/v1/webcams/${cam.slug}`, { headers: owdbHeaders, timeout: 3000 } as any);
-                  if (detailRes.ok) {
-                    const detailData = await detailRes.json();
-                    liveStreamUrl = detailData.data?.stream_url || "";
-                  }
-                } catch (e) {
-                  console.warn(`Failed to fetch detail for owdb slug ${cam.slug}`);
-                }
-
-                if (liveStreamUrl) {
-                  // Convert youtube watch URLs to embed URLs to allow iframing
-                  if (liveStreamUrl.includes("youtube.com/watch?v=")) {
-                    liveStreamUrl = liveStreamUrl.replace("watch?v=", "embed/");
-                  }
-                } else {
-                  // Fallback to the web link but it has SAMEORIGIN, so it might fail to iframe
-                  liveStreamUrl = `https://openwebcamdb.com/webcams/${cam.slug}`;
-                }
+                // Set a placeholder live stream URL so the frontend will call /api/stream-url
+                // The actual stream_url will be fetched on demand.
+                let liveStreamUrl = `https://openwebcamdb.com/webcams/${cam.slug}`;
 
                 liveWebcams.push({
                   webcamId: camId,
@@ -244,6 +227,28 @@ async function startServer() {
         return res.status(400).json({ error: "Missing webcam id" });
       }
 
+      if (typeof id === 'string' && id.startsWith('owdb_')) {
+        const slug = id.replace('owdb_', '');
+        try {
+          const openWebcamDbKey = (req.headers["x-openwebcamdb-api-key"] as string) || process.env.OPENWEBCAMDB_API_KEY || "58|LmdLOrSyprVtGgmQR1KWyMMAmaniX9HcJqRYUy6nd617981b";
+          const owdbHeaders = { "Authorization": `Bearer ${openWebcamDbKey}` };
+          const detailRes = await fetch(`https://openwebcamdb.com/api/v1/webcams/${slug}`, { headers: owdbHeaders, timeout: 3000 } as any);
+          if (detailRes.ok) {
+            const detailData = await detailRes.json();
+            let liveStreamUrl = detailData.data?.stream_url || "";
+            if (liveStreamUrl.includes("youtube.com/watch?v=")) {
+              liveStreamUrl = liveStreamUrl.replace("watch?v=", "embed/");
+            }
+            if (liveStreamUrl) {
+              return res.json({ streamUrl: liveStreamUrl });
+            }
+          }
+        } catch (e) {
+          console.warn(`Failed to fetch detail for owdb slug ${slug}`);
+        }
+        return res.json({ streamUrl: `https://openwebcamdb.com/webcams/${slug}` });
+      }
+
       const response = await fetch(`https://webcams.windy.com/webcams/stream/${id}`, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -286,10 +291,38 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { index: false })); // prevent express from serving index.html automatically
     // For Express 4.x we use '*' instead of '*all'
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get("*", async (req, res) => {
+      try {
+        let html = await fs.readFile(path.join(distPath, "index.html"), "utf8");
+        
+        // Inject Open Graph tags for city
+        const cityId = req.query.city as string;
+        if (cityId) {
+          const city = cities.find(c => c.id === cityId);
+          if (city) {
+            const title = `Guarda ${city.name} Live! - puulp.it`;
+            const description = `Guarda la webcam in diretta streaming da ${city.name}, ${city.country}.`;
+            const imageUrl = city.imageUrl;
+            const metaTags = `
+              <meta property="og:title" content="${title}">
+              <meta property="og:description" content="${description}">
+              <meta property="og:image" content="${imageUrl}">
+              <meta property="og:url" content="https://${req.get('host')}/?city=${city.id}">
+              <meta name="twitter:card" content="summary_large_image">
+              <meta name="twitter:title" content="${title}">
+              <meta name="twitter:description" content="${description}">
+              <meta name="twitter:image" content="${imageUrl}">
+            `;
+            html = html.replace('</head>', `${metaTags}</head>`);
+          }
+        }
+        
+        res.send(html);
+      } catch (err) {
+        res.sendFile(path.join(distPath, "index.html"));
+      }
     });
   }
 

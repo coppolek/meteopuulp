@@ -52,7 +52,12 @@ import {
   ShieldCheck,
   ExternalLink,
   Sliders,
-  Megaphone
+  Megaphone,
+  Share2,
+  Twitter,
+  Facebook,
+  Copy,
+  Check
 } from "lucide-react";
 import { AdminPanelModal } from "./components/AdminPanelModal";
 import { Banner, AppSettings } from "./types";
@@ -79,11 +84,26 @@ interface CommentItem {
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [customCities, setCustomCities] = useState<City[]>(cities);
-  const [activeCity, setActiveCity] = useState<City>(cities[0]);
+  const [activeCity, setActiveCity] = useState<City>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const cityId = params.get('city');
+    if (cityId) {
+      const found = cities.find(c => c.id === cityId);
+      if (found) return found;
+    }
+    return cities[0];
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [onlyLiveStreams, setOnlyLiveStreams] = useState<boolean>(true);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('city') !== activeCity.id) {
+      window.history.pushState(null, '', `?city=${activeCity.id}`);
+    }
+  }, [activeCity.id]);
 
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [webcams, setWebcams] = useState<WindyWebcam[]>([]);
@@ -119,6 +139,8 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [activeBanners, setActiveBanners] = useState<Banner[]>([]);
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Sync App Settings from Firestore
   useEffect(() => {
@@ -655,6 +677,24 @@ export default function App() {
     }
   };
 
+  const handleShareCopy = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShareTwitter = () => {
+    const url = window.location.href;
+    const text = encodeURIComponent(`Guarda le webcam in diretta da ${activeCity.name}! 🌍📹\n\n`);
+    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(url)}`, '_blank');
+  };
+
+  const handleShareFacebook = () => {
+    const url = window.location.href;
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
+  };
+
   const filteredCities = customCities.filter(city => 
     city.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -857,6 +897,45 @@ export default function App() {
                   <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current text-white' : 'text-red-400'}`} />
                   <span className="text-xs font-extrabold">{activeLikesCount} <span className="font-medium opacity-80 hidden sm:inline">Mi Piace</span></span>
                 </button>
+              )}
+
+              {(activeWebcam?.url || playerUrl) && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowShareMenu(!showShareMenu)}
+                    className="p-2 rounded-xl bg-black/60 hover:bg-black/90 backdrop-blur-md text-slate-300 hover:text-white transition-all border border-white/10 shadow-lg flex items-center gap-1.5"
+                    title="Condividi Diretta"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span className="text-xs font-semibold hidden sm:inline">Condividi</span>
+                  </button>
+
+                  {showShareMenu && (
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 flex flex-col gap-1">
+                      <button 
+                        onClick={() => { handleShareCopy(); setShowShareMenu(false); }}
+                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-colors"
+                      >
+                        {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                        {copied ? 'Copiato!' : 'Copia Link'}
+                      </button>
+                      <button 
+                        onClick={() => { handleShareTwitter(); setShowShareMenu(false); }}
+                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-blue-400 rounded-lg transition-colors"
+                      >
+                        <Twitter className="w-4 h-4" />
+                        Condividi su X
+                      </button>
+                      <button 
+                        onClick={() => { handleShareFacebook(); setShowShareMenu(false); }}
+                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-blue-600 rounded-lg transition-colors"
+                      >
+                        <Facebook className="w-4 h-4" />
+                        Condividi su Facebook
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {(activeWebcam?.url || playerUrl) && (
