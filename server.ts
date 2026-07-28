@@ -42,6 +42,37 @@ async function startServer() {
     }
   });
 
+  app.use(express.json());
+
+  app.post("/api/generate-share-text", async (req, res) => {
+    try {
+      const { city, temp, description, platform } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Gemini API key is not configured" });
+      }
+
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey });
+
+      const prompt = `Write a short, engaging ${platform} post in Italian about watching live webcams from ${city}.
+Current weather there is ${temp}°C and ${description}.
+Include emojis and a call to action to visit the live stream on puulp.it.
+Keep it under ${platform === 'twitter' ? '280 characters' : '400 characters'}. Do NOT wrap it in quotes.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+      });
+      
+      const text = response.text?.trim() || "";
+      res.json({ text });
+    } catch (error: any) {
+      console.error("Gemini API error:", error);
+      res.status(500).json({ error: "Failed to generate text" });
+    }
+  });
+
   // API Routes
   app.get("/api/weather", async (req, res) => {
     try {

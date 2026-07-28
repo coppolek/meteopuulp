@@ -57,7 +57,8 @@ import {
   Twitter,
   Facebook,
   Copy,
-  Check
+  Check,
+  Loader2
 } from "lucide-react";
 import { AdminPanelModal } from "./components/AdminPanelModal";
 import { WeeklyForecastWidget } from "./components/WeeklyForecastWidget";
@@ -685,15 +686,75 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleShareTwitter = () => {
+  const [isGeneratingShare, setIsGeneratingShare] = useState<string | null>(null);
+
+  const generateShareText = async (platform: string) => {
+    try {
+      const response = await fetch('/api/generate-share-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          city: activeCity.name,
+          temp: weather ? Math.round(weather.main.temp) : "",
+          description: weather ? weather.weather[0]?.description : "",
+          platform
+        })
+      });
+      const data = await response.json();
+      return data.text;
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+  };
+
+  const handleShareTwitter = async () => {
+    setIsGeneratingShare('twitter');
+    let textStr = await generateShareText('twitter');
+    if (!textStr) {
+      textStr = `Guarda le webcam in diretta da ${activeCity.name}! 🌍📹\n`;
+      if (weather) {
+        textStr += `Oggi: ${Math.round(weather.main.temp)}°C, ${weather.weather[0]?.description} 🌡️\n`;
+        if (weather.forecast && weather.forecast.length > 0) {
+          textStr += `Domani: ${Math.round(weather.forecast[0].temp_max)}° / ${Math.round(weather.forecast[0].temp_min)}°, ${weather.forecast[0].description} 📅\n`;
+        }
+      }
+    }
+    setIsGeneratingShare(null);
+    setShowShareMenu(false);
     const url = window.location.href;
-    const text = encodeURIComponent(`Guarda le webcam in diretta da ${activeCity.name}! 🌍📹\n\n`);
+    const text = encodeURIComponent(textStr + '\n');
     window.open(`https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(url)}`, '_blank');
   };
 
-  const handleShareFacebook = () => {
+  const handleShareFacebook = async () => {
+    setIsGeneratingShare('facebook');
+    let textStr = await generateShareText('facebook');
+    if (!textStr) {
+      const intros = [
+        `Vieni a scoprire in diretta cosa succede a ${activeCity.name}! 🌍📹`,
+        `Guarda le immagini esclusive in diretta streaming da ${activeCity.name} 🤩!`,
+        `Che spettacolo a ${activeCity.name}! Goditi la webcam in tempo reale ☀️.`,
+        `Vuoi viaggiare a ${activeCity.name} senza muoverti da casa? Guarda qui! ✈️`,
+      ];
+      const randomIntro = intros[Math.floor(Math.random() * intros.length)];
+      
+      textStr = `${randomIntro}\n`;
+      if (weather) {
+        textStr += `Oggi: ${Math.round(weather.main.temp)}°C, ${weather.weather[0]?.description} 🌡️\n`;
+        if (weather.forecast && weather.forecast.length > 0) {
+          textStr += `Domani: ${Math.round(weather.forecast[0].temp_max)}° / ${Math.round(weather.forecast[0].temp_min)}°, ${weather.forecast[0].description} 📅\n`;
+        }
+      }
+      textStr += `\nVisita puulp.it per scoprire questa e tante altre webcam da tutto il mondo! 👇`;
+    }
+    
+    setIsGeneratingShare(null);
+    setShowShareMenu(false);
+    
     const url = window.location.href;
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
+    const quote = encodeURIComponent(textStr);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${quote}`, '_blank');
   };
 
   const filteredCities = customCities.filter(city => 
@@ -921,18 +982,20 @@ export default function App() {
                         {copied ? 'Copiato!' : 'Copia Link'}
                       </button>
                       <button 
-                        onClick={() => { handleShareTwitter(); setShowShareMenu(false); }}
-                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-blue-400 rounded-lg transition-colors"
+                        onClick={handleShareTwitter}
+                        disabled={isGeneratingShare !== null}
+                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-blue-400 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Twitter className="w-4 h-4" />
-                        Condividi su X
+                        {isGeneratingShare === 'twitter' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Twitter className="w-4 h-4" />}
+                        {isGeneratingShare === 'twitter' ? 'Generazione...' : 'Condividi su X'}
                       </button>
                       <button 
-                        onClick={() => { handleShareFacebook(); setShowShareMenu(false); }}
-                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-blue-600 rounded-lg transition-colors"
+                        onClick={handleShareFacebook}
+                        disabled={isGeneratingShare !== null}
+                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-blue-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Facebook className="w-4 h-4" />
-                        Condividi su Facebook
+                        {isGeneratingShare === 'facebook' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Facebook className="w-4 h-4" />}
+                        {isGeneratingShare === 'facebook' ? 'Generazione...' : 'Condividi su Facebook'}
                       </button>
                     </div>
                   )}
