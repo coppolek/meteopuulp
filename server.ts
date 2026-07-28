@@ -56,16 +56,68 @@ async function startServer() {
         });
       }
 
-      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
-      const response = await fetch(url);
+      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+
+      const [weatherRes, forecastRes] = await Promise.all([
+        fetch(weatherUrl),
+        fetch(forecastUrl)
+      ]);
       
-      if (!response.ok) {
-        const errorData = await response.text();
-        return res.status(response.status).json({ error: `OpenWeatherMap API error: ${errorData}` });
+      if (!weatherRes.ok) {
+        const errorData = await weatherRes.text();
+        return res.status(weatherRes.status).json({ error: `OpenWeatherMap API error: ${errorData}` });
       }
 
-      const data = await response.json();
-      res.json(data);
+      const weatherData = await weatherRes.json();
+
+      let dailyForecasts = [];
+      if (forecastRes.ok) {
+        const forecastData = await forecastRes.json();
+        const list = forecastData.list || [];
+        const dailyMap = new Map();
+        
+        const tzOffset = forecastData.city?.timezone || 0;
+        
+        for (const item of list) {
+            const localDate = new Date((item.dt + tzOffset) * 1000);
+            const dateStr = localDate.toISOString().split('T')[0];
+            
+            if (!dailyMap.has(dateStr)) {
+                dailyMap.set(dateStr, {
+                    date: dateStr,
+                    dt: item.dt,
+                    temp_min: item.main.temp_min,
+                    temp_max: item.main.temp_max,
+                    icon: item.weather[0].icon.replace('n', 'd'), // Prefer day icons for daily forecast
+                    description: item.weather[0].description,
+                });
+            } else {
+                const day = dailyMap.get(dateStr);
+                day.temp_min = Math.min(day.temp_min, item.main.temp_min);
+                day.temp_max = Math.max(day.temp_max, item.main.temp_max);
+                
+                const hour = localDate.getUTCHours();
+                if (hour >= 11 && hour <= 15) {
+                    day.icon = item.weather[0].icon.replace('n', 'd');
+                    day.description = item.weather[0].description;
+                }
+            }
+        }
+        
+        const todayStr = new Date((Date.now() + tzOffset * 1000)).toISOString().split('T')[0];
+        
+        dailyForecasts = Array.from(dailyMap.values())
+            .filter(d => d.date !== todayStr)
+            .slice(0, 3);
+            
+        if (dailyForecasts.length < 3) {
+            dailyForecasts = Array.from(dailyMap.values()).slice(1, 4);
+        }
+      }
+      
+      weatherData.forecast = dailyForecasts;
+      res.json(weatherData);
     } catch (error: any) {
       console.error("Weather API error:", error);
       res.status(500).json({ error: "Failed to fetch weather data" });

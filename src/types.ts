@@ -44,6 +44,14 @@ export interface WeatherData {
   };
   name: string;
   timezone: number;
+  forecast?: Array<{
+    date: string;
+    dt: number;
+    temp_min: number;
+    temp_max: number;
+    icon: string;
+    description: string;
+  }>;
 }
 
 export interface Banner {

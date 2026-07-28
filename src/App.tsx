@@ -1140,7 +1140,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/60">
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/60 mb-3">
                 <div className="flex items-center gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800/40">
                   <Wind className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                   <div>
@@ -1156,6 +1156,28 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {weather.forecast && weather.forecast.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/60">
+                  {weather.forecast.map((day, idx) => (
+                    <div key={idx} className="flex flex-col items-center p-1.5 bg-slate-900/40 rounded-lg border border-slate-800/30">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                        {new Date(day.dt * 1000).toLocaleDateString('it-IT', { weekday: 'short' })}
+                      </span>
+                      <img 
+                        src={`https://openweathermap.org/img/wn/${day.icon}.png`} 
+                        alt={day.description}
+                        title={day.description}
+                        className="w-7 h-7 object-contain drop-shadow-md brightness-110"
+                      />
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs font-bold text-white">{Math.round(day.temp_max)}°</span>
+                        <span className="text-[10px] font-semibold text-slate-500">{Math.round(day.temp_min)}°</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
