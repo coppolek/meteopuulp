@@ -60,6 +60,7 @@ import {
   Check
 } from "lucide-react";
 import { AdminPanelModal } from "./components/AdminPanelModal";
+import { WeeklyForecastWidget } from "./components/WeeklyForecastWidget";
 import { Banner, AppSettings } from "./types";
 
 
@@ -1159,7 +1160,7 @@ export default function App() {
 
               {weather.forecast && weather.forecast.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/60">
-                  {weather.forecast.map((day, idx) => (
+                  {weather.forecast.slice(0, 3).map((day, idx) => (
                     <div key={idx} className="flex flex-col items-center p-1.5 bg-slate-900/40 rounded-lg border border-slate-800/30">
                       <span className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">
                         {new Date(day.dt * 1000).toLocaleDateString('it-IT', { weekday: 'short' })}
@@ -1180,6 +1181,9 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* Weekly Forecast Widget */}
+          {weather && <WeeklyForecastWidget weather={weather} />}
 
           {/* Interactive Windy Map Box */}
           <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col justify-between h-[220px] shrink-0 shadow-lg overflow-hidden">

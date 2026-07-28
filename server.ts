@@ -110,10 +110,10 @@ async function startServer() {
         
         dailyForecasts = Array.from(dailyMap.values())
             .filter(d => d.date !== todayStr)
-            .slice(0, 3);
+            .slice(0, 5);
             
-        if (dailyForecasts.length < 3) {
-            dailyForecasts = Array.from(dailyMap.values()).slice(1, 4);
+        if (dailyForecasts.length < 5) {
+            dailyForecasts = Array.from(dailyMap.values()).slice(1, 6);
         }
       }
       
@@ -350,27 +350,34 @@ async function startServer() {
       try {
         let html = await fs.readFile(path.join(distPath, "index.html"), "utf8");
         
-        // Inject Open Graph tags for city
+        // Inject Open Graph tags for city or default
         const cityId = req.query.city as string;
+        let title = "puulp.it - World Live Cams & Weather";
+        let description = "Guarda le migliori webcam live dal mondo con aggiornamenti meteo in tempo reale.";
+        let imageUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200";
+        let url = `https://${req.get('host')}/`;
+
         if (cityId) {
           const city = cities.find(c => c.id === cityId);
           if (city) {
-            const title = `Guarda ${city.name} Live! - puulp.it`;
-            const description = `Guarda la webcam in diretta streaming da ${city.name}, ${city.country}.`;
-            const imageUrl = city.imageUrl;
-            const metaTags = `
-              <meta property="og:title" content="${title}">
-              <meta property="og:description" content="${description}">
-              <meta property="og:image" content="${imageUrl}">
-              <meta property="og:url" content="https://${req.get('host')}/?city=${city.id}">
-              <meta name="twitter:card" content="summary_large_image">
-              <meta name="twitter:title" content="${title}">
-              <meta name="twitter:description" content="${description}">
-              <meta name="twitter:image" content="${imageUrl}">
-            `;
-            html = html.replace('</head>', `${metaTags}</head>`);
+            title = `Guarda ${city.name} Live! - puulp.it`;
+            description = `Guarda la webcam in diretta streaming da ${city.name}, ${city.country}.`;
+            imageUrl = city.imageUrl.replace('w=300', 'w=1200');
+            url = `https://${req.get('host')}/?city=${city.id}`;
           }
         }
+        
+        const metaTags = `
+          <meta property="og:title" content="${title}">
+          <meta property="og:description" content="${description}">
+          <meta property="og:image" content="${imageUrl}">
+          <meta property="og:url" content="${url}">
+          <meta name="twitter:card" content="summary_large_image">
+          <meta name="twitter:title" content="${title}">
+          <meta name="twitter:description" content="${description}">
+          <meta name="twitter:image" content="${imageUrl}">
+        `;
+        html = html.replace('</head>', `${metaTags}</head>`);
         
         res.send(html);
       } catch (err) {
