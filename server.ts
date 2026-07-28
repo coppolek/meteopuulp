@@ -22,22 +22,23 @@ async function startServer() {
 
   // ads.txt route
   app.get("/ads.txt", async (req, res) => {
+    const hardcodedAdsTxt = "google.com, pub-5738943819550045, DIRECT, f08c47fec0942fa0";
     try {
       if (!firebaseProjectId) {
-        return res.type("text/plain").send("");
+        return res.type("text/plain").send(hardcodedAdsTxt);
       }
       const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/${firestoreDbId}/documents/app_settings/config`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         const adsTxtContent = data.fields?.adsTxtContent?.stringValue || "";
-        res.type("text/plain").send(adsTxtContent);
+        res.type("text/plain").send(adsTxtContent ? `${hardcodedAdsTxt}\n${adsTxtContent}` : hardcodedAdsTxt);
       } else {
-        res.type("text/plain").send("");
+        res.type("text/plain").send(hardcodedAdsTxt);
       }
     } catch (e) {
       console.error("Error fetching ads.txt", e);
-      res.type("text/plain").send("");
+      res.type("text/plain").send(hardcodedAdsTxt);
     }
   });
 
